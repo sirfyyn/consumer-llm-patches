@@ -1,6 +1,6 @@
 # consumer-llm-patches
 
-**10 patches to train Gemma4 26B on a single RTX 4090.**
+**11 patches to train Gemma4 26B on a single RTX 4090.**
 
 > Built by Max Bitzer (@sirfyyn) in one session, from a living room.  
 > No A100. No NVLink. No enterprise budget.  
@@ -13,7 +13,7 @@
 Gemma4 26B-A4B is a state-of-the-art MoE (Mixture-of-Experts) model from Google.  
 Officially, fine-tuning it requires multi-GPU enterprise hardware.
 
-These 10 patches make it trainable on:
+These 11 patches make it trainable on:
 - RTX 4090 (24GB, sm_89) — primary compute
 - RTX PRO 2000 / any second GPU (optional, for weight distribution)
 - 55GB+ system RAM (CPU offload instead of disk)
@@ -37,6 +37,7 @@ These 10 patches make it trainable on:
 | Patch | Line | Problem | Fix |
 |-------|------|---------|-----|
 | P3 | ~1021 | `getattr(self.weight, scb_name)` crashes on meta-device weights | Use `getattr(..., None)` default |
+| P11 | ~639 | `Int8Params.__new__()` rejects `_is_hf_initialized` kwarg from transformers 5.x | Add `**kwargs` to signature (absorbs any HF-injected params) |
 
 ### transformers — `models/gemma4/modeling_gemma4.py`
 
@@ -95,6 +96,21 @@ Setup: Gemma4 26B-A4B, BnB INT8, PEFT LoRA (r=16), Gradient Checkpointing, CPU o
 **Critical finding:** Step time is nearly flat across sequence lengths (64→512 tokens = 1.06×).  
 The bottleneck is CPU→GPU weight transfer (constant per forward pass), not compute.  
 This is the empirical foundation for [PCIELink research](https://github.com/sirfyyn/pcielink) — async prefetching would reduce ~6s to ~1s.
+
+---
+
+## Tested versions
+
+| Package | Version | Notes |
+|---------|---------|-------|
+| torch | 2.11.0+cu130 | CUDA 13.0 — required for BnB 0.49.2 cpp extensions |
+| bitsandbytes | 0.49.2 | P11 required for transformers ≥ 5.x |
+| transformers | 5.5.4 | P4–P7, P10 apply here |
+| peft | 0.19.1 | P8 applies here |
+| accelerate | 1.13.0 | — |
+
+> **Note on upgrades:** After `pip install --upgrade`, patches must be re-applied — pip overwrites the patched files.
+> Use `python apply_patches.py --verify` to check patch state. See `apply_patches.py` for automation.
 
 ---
 

@@ -1,0 +1,37 @@
+# Patch P11 — bitsandbytes nn/modules.py ~L638
+# Int8Params.__new__() **kwargs absorber for HF compatibility
+#
+# Problem: transformers 5.x passes `_is_hf_initialized` (and potentially other
+# future kwargs) when reconstructing Int8Params via accelerate's
+# set_module_tensor_to_device(). The original signature has no **kwargs,
+# causing TypeError on model load with device_map="auto".
+#
+#   TypeError: Int8Params.__new__() got an unexpected keyword argument '_is_hf_initialized'
+#
+# Affected versions:
+#   - bitsandbytes 0.49.2 + transformers ≥ 5.x + accelerate ≥ 1.x
+#   - Triggered when using device_map="auto" with CPU offload
+#
+# Fix: Add **kwargs to Int8Params.__new__() signature to silently absorb any
+# HuggingFace-injected initialization kwargs.
+
+# BEFORE (original bitsandbytes 0.49.2):
+    def __new__(
+        cls,
+        data: Optional[torch.Tensor] = None,
+        requires_grad=True,
+        has_fp16_weights=False,
+        CB: Optional[torch.Tensor] = None,
+        SCB: Optional[torch.Tensor] = None,
+    ):
+
+# AFTER (PATCH sirfyyn P11):
+    def __new__(
+        cls,
+        data: Optional[torch.Tensor] = None,
+        requires_grad=True,
+        has_fp16_weights=False,
+        CB: Optional[torch.Tensor] = None,
+        SCB: Optional[torch.Tensor] = None,
+        **kwargs,  # PATCH sirfyyn P11: absorb _is_hf_initialized + future HF kwargs
+    ):
