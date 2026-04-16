@@ -181,6 +181,9 @@ for epoch in range(EPOCHS):
         epoch_loss += loss.item() * GRAD_ACCUM
 
         if (step + 1) % GRAD_ACCUM == 0:
+            torch.nn.utils.clip_grad_norm_(
+                [p for p in model.parameters() if p.requires_grad and p.grad is not None], 1.0
+            )
             optimizer.step()
             optimizer.zero_grad()
 
