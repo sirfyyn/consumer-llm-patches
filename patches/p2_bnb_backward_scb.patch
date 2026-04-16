@@ -1,0 +1,18 @@
+# Patch P2 — bitsandbytes autograd/_functions.py ~L247
+# Backward: SCB=None guard with recompute from CB
+#
+# Problem: During the backward pass, state.SCB may be None if post_forward()
+# cleared it and P9's restore didn't trigger (race condition or edge case).
+# int8_mixed_scaled_mm() requires SCB to be non-None → crash.
+#
+# Fix: Guard against SCB=None in the backward path, recompute from CB if needed.
+
+# BEFORE (original):
+        # ... backward computation using state.SCB without guard
+        out = F.int8_mixed_scaled_mm(state.CB, ..., state.SCB, ...)
+
+# AFTER (PATCH sirfyyn P2):
+        # PATCH sirfyyn P2: guard against SCB=None in backward
+        if state.SCB is None and state.CB is not None:
+            state.SCB = state.CB.float().abs().amax(dim=1).div(127.0).to(state.CB.device)
+        out = F.int8_mixed_scaled_mm(state.CB, ..., state.SCB, ...)

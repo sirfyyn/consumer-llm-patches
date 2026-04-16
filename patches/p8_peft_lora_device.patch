@@ -1,0 +1,17 @@
+# Patch P8 — peft tuners/lora/bnb.py ~L267 and ~L549
+# LoRA output device normalization (two occurrences)
+#
+# Problem: LoRA adds a low-rank update: output = base_result + lora_A * lora_B * x
+# When base_result is on cuda:1 (GPU1) but the LoRA adapters run on cuda:0 (GPU0),
+# the addition crashes with device mismatch.
+# This happens because LoRA adapters are always on the main device (cuda:0)
+# but base model weights may be distributed.
+#
+# Fix: Move LoRA output to result.device before addition.
+# Must be applied at BOTH occurrences in peft/tuners/lora/bnb.py.
+
+# BEFORE (original, ~L267 and ~L549):
+        result = result + output
+
+# AFTER (PATCH sirfyyn P8):
+        result = result + output.to(result.device)  # PATCH sirfyyn P8

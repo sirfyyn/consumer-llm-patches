@@ -1,0 +1,20 @@
+# Patch P6 — transformers integrations/sdpa_attention.py ~L92
+# attention_mask device fix before SDPA
+#
+# Problem: scaled_dot_product_attention requires all tensors on the same device.
+# When attention_mask is created on GPU0 but query/key/value are on CPU (offloaded layer),
+# PyTorch SDPA crashes with device mismatch error.
+#
+# Fix: Move attention_mask to query.device before calling sdpa.
+
+# BEFORE (original):
+        attn_output = torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, attn_mask=attention_mask, ...
+        )
+
+# AFTER (PATCH sirfyyn P6):
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(query.device)  # PATCH sirfyyn P6
+        attn_output = torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, attn_mask=attention_mask, ...
+        )

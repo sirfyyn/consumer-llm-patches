@@ -1,0 +1,20 @@
+# Patch P10 — transformers models/gemma4/modeling_gemma4.py ~L2040
+# Text-only training: mm_token_type_ids not required
+#
+# Problem: transformers 5.5.4 added a validation in create_causal_mask_mapping()
+# that raises ValueError when training without mm_token_type_ids.
+# This was added for multimodal (image+text) training safety but breaks
+# text-only fine-tuning of Gemma4.
+#
+# Fix: Replace raise with pass for text-only training.
+# Text tokens (all tokens when no images are present) need no multimodal mask.
+
+# BEFORE (original):
+        if is_training and mm_token_type_ids is None:
+            raise ValueError("`mm_token_type_ids` is required as a model input when training")
+
+# AFTER (PATCH sirfyyn P10):
+        if is_training and mm_token_type_ids is None:
+            # PATCH sirfyyn P10: Text-only training. mm_token_type_ids=None OK.
+            # All tokens are text tokens. No multimodal mask needed.
+            pass  # do not raise, mm_token_type_ids stays None

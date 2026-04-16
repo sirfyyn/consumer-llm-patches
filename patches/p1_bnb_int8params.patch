@@ -1,0 +1,25 @@
+# Patch P1 — bitsandbytes autograd/_functions.py ~L149
+# Pre-quantized Int8Params NaN fix
+#
+# Problem: When gradient checkpointing recomputes a forward pass,
+# Int8Params already have B.dtype==int8 (pre-quantized). The original
+# code path calls int8_vectorwise_quant() on data that's already int8,
+# producing garbage CB/SCB values and NaN loss.
+#
+# Fix: Detect B.dtype==int8, build CB/SCB directly from the weight data.
+
+# BEFORE (original):
+            else:
+                state.CB, state.SCB, _ = F.int8_vectorwise_quant(B.to(torch.float16))
+
+# AFTER (PATCH sirfyyn P1):
+            # PATCH sirfyyn P1: Pre-quantized Int8Params (B.dtype==int8) have no SCB.
+            # Build CB/SCB from the weight data directly.
+            if B.dtype == torch.int8:
+                state.CB = B.data.clone()
+                if hasattr(B, "SCB") and B.SCB is not None:
+                    state.SCB = B.SCB.to(state.CB.device)
+                else:
+                    state.SCB = state.CB.float().abs().amax(dim=1).div(127.0).to(state.CB.device)
+            else:
+                state.CB, state.SCB, _ = F.int8_vectorwise_quant(B.to(torch.float16))

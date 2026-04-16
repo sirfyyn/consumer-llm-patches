@@ -1,0 +1,25 @@
+# Patch P5 — transformers models/gemma4/modeling_gemma4.py ~L1366
+# Normalize attention_mask/position_ids/position_embeddings to hidden_states.device
+#
+# Problem: In cross-device MoE offload, the decoder layer may run on a different
+# device than where attention_mask and position_ids were created (GPU0).
+# When layers 0-19 are on GPU0 and layers 20-29 on CPU, the CPU layers crash
+# because their inputs are on GPU0.
+#
+# Fix: Move all inputs to hidden_states.device at the start of each decoder layer.
+
+# BEFORE (original):
+        # (inside Gemma4DecoderLayer.forward or similar)
+        # No device normalization
+
+# AFTER (PATCH sirfyyn P5):
+        # PATCH sirfyyn P5: normalize all inputs to hidden_states device
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(hidden_states.device)
+        if position_ids is not None:
+            position_ids = position_ids.to(hidden_states.device)
+        if position_embeddings is not None:
+            position_embeddings = (
+                position_embeddings[0].to(hidden_states.device),
+                position_embeddings[1].to(hidden_states.device),
+            )

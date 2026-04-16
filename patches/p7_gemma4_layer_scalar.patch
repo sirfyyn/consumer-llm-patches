@@ -1,0 +1,14 @@
+# Patch P7 — transformers models/gemma4/modeling_gemma4.py ~L1423
+# layer_scalar device fix
+#
+# Problem: Gemma4 uses a per-layer scalar for output scaling.
+# This scalar is initialized on GPU0 (main device) but when decoder layers
+# run on CPU (offloaded), hidden_states is on CPU and the multiplication crashes.
+#
+# Fix: Move layer_scalar to hidden_states.device before use.
+
+# BEFORE (original):
+        hidden_states = hidden_states * self.layer_scalar
+
+# AFTER (PATCH sirfyyn P7):
+        hidden_states = hidden_states * self.layer_scalar.to(hidden_states.device)  # PATCH sirfyyn P7

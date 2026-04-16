@@ -1,0 +1,15 @@
+# Patch P3 — bitsandbytes nn/modules.py ~L1021
+# Meta-device weight SCB AttributeError fix
+#
+# Problem: When loading with device_map="auto" and low_cpu_mem_usage=True,
+# some weights are initially placed on the "meta" device (no actual storage).
+# bitsandbytes tries to access weight.SCB via getattr() without a default,
+# causing AttributeError when the meta-device weight doesn't have SCB set.
+#
+# Fix: Use getattr(..., None) to safely return None instead of raising.
+
+# BEFORE (original):
+        scb = getattr(self.weight, scb_name)
+
+# AFTER (PATCH sirfyyn P3):
+        scb = getattr(self.weight, scb_name, None)  # PATCH sirfyyn P3: meta-device safety

@@ -1,0 +1,23 @@
+# Patch P9 — bitsandbytes autograd/_functions.py ~L162
+# GC recompute: standalone SCB restore before threshold check
+#
+# Problem: During gradient checkpointing recompute, post_forward() clears SCB.
+# The original code structure wraps the SCB restore inside an outer if-block
+# that checks a condition which may be False during GC recompute.
+# Result: SCB is None when the backward pass needs it → crash.
+#
+# Fix: Move the SCB restore to a standalone block BEFORE the threshold check,
+# so it always executes during GC recompute regardless of other conditions.
+
+# BEFORE (original):
+        if condition:
+            if state.SCB is None:
+                state.SCB = state.CB.float().abs().amax(dim=1).div(127.0)
+            # ... rest of logic
+
+# AFTER (PATCH sirfyyn P9):
+        # PATCH sirfyyn P9: standalone SCB restore before threshold check
+        if state.SCB is None and state.CB is not None:
+            state.SCB = state.CB.float().abs().amax(dim=1).div(127.0).to(state.CB.device)
+        if condition:
+            # ... rest of logic

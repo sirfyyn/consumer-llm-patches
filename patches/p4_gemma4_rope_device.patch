@@ -1,0 +1,16 @@
+# Patch P4 — transformers models/gemma4/modeling_gemma4.py ~L751
+# RoPE cos/sin device fix for cross-device MoE offload
+#
+# Problem: When layers are distributed across GPU0 + GPU1 + CPU via device_map="auto",
+# RoPE (Rotary Position Embedding) cos/sin tensors are created on the wrong device.
+# The einsum/unsqueeze operations crash with "Expected all tensors to be on the same device".
+#
+# Fix: Move cos/sin to the same device as x before unsqueeze.
+
+# BEFORE (original):
+        cos = cos.unsqueeze(unsqueeze_dim)
+        sin = sin.unsqueeze(unsqueeze_dim)
+
+# AFTER (PATCH sirfyyn P4):
+        cos = cos.to(device=x.device).unsqueeze(unsqueeze_dim)  # PATCH sirfyyn P4
+        sin = sin.to(device=x.device).unsqueeze(unsqueeze_dim)  # PATCH sirfyyn P4
