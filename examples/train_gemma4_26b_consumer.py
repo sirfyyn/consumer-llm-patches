@@ -17,11 +17,25 @@ This script trains Gemma4 26B (a 26B MoE model, 4B active) with:
 Measured performance: ~6.25s/step at 512 tokens on RTX 4090 + 60GB CPU RAM.
 7000 samples × 1 epoch ≈ 12-13 hours.
 
-Data format: Gemma4 chat format, one conversation per block:
-    <bos><start_of_turn>user
-    [question]<end_of_turn>
-    <start_of_turn>model
-    [answer]<end_of_turn>
+CRITICAL: Match your training data format to the tokenizer.
+Use tokenizer.apply_chat_template() to generate training data:
+
+    from transformers import AutoTokenizer
+    tok = AutoTokenizer.from_pretrained("unsloth/gemma-4-26B-A4B-it")
+    sample = tok.apply_chat_template(
+        [{"role": "user", "content": q}, {"role": "assistant", "content": a}],
+        tokenize=False
+    )
+    # → '<bos><|turn>user\n[q]<turn|>\n<|turn>model\n[a]<turn|>\n'
+
+Data format for unsloth/gemma-4-26B-A4B-it (one conversation per block):
+    <bos><|turn>user
+    [question]<turn|>
+    <|turn>model
+    [answer]<turn|>
+
+Note: google/gemma-4-9b-it uses different tokens (<start_of_turn>/<end_of_turn>).
+Always check tok.apply_chat_template() for the correct format for your model.
 """
 
 import os, gc, torch, time
@@ -106,19 +120,30 @@ total_p = sum(p.numel() for p in model.parameters())
 print(f"Trainable: {trainable:,} / {total_p:,} ({100*trainable/total_p:.3f}%)")
 
 
-# Dataset — splits on Gemma4 <end_of_turn> separator
+# Dataset — splits on <bos> to get FULL conversations (user + model response)
+#
+# IMPORTANT: Match your training data format to the model's tokenizer:
+#   - google/gemma-4-*-it uses: <start_of_turn>user ... <end_of_turn>
+#   - unsloth/gemma-4-* uses:   <|turn>user ... <turn|>
+#
+# Use tokenizer.apply_chat_template() to generate training data,
+# then split on <bos> to get one full conversation per sample.
+#
+# Training data format (one sample):
+#   <bos><|turn>user\n[question]<turn|>\n<|turn>model\n[answer]<turn|>
 class ChatDataset(Dataset):
     def __init__(self, path, tokenizer, max_len):
         with open(path) as f:
             raw = f.read()
-        chunks = [c.strip() for c in raw.split("<end_of_turn>") if len(c.strip()) > 50]
+        # Split on <bos> → each chunk is one full conversation (user + model response)
+        chunks = [c.strip() for c in raw.split("<bos>") if len(c.strip()) > 50]
         self.samples = []
         for chunk in chunks:
-            text = chunk + "<end_of_turn>"
+            text = "<bos>" + chunk  # re-add BOS
             enc = tokenizer(text, truncation=True, max_length=max_len, return_tensors="pt")
             if enc["input_ids"].shape[1] >= 8:
                 self.samples.append(enc["input_ids"].squeeze(0))
-        print(f"Dataset: {len(self.samples)} samples from {path}")
+        print(f"Dataset: {len(self.samples)} full conversations from {path}")
 
     def __len__(self): return len(self.samples)
     def __getitem__(self, i): return self.samples[i]
